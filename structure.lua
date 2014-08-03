@@ -59,31 +59,41 @@ local M = {
   end,
   __div = function (a, test)
     a = S.tostructure(a)
-    if type(test) == "function" then
-      return S.new(function (self, ...)
-          local result, error = a:checker(...)
-          if failed(result) then return FAILURE, error end
-          local result, error = test(...)
-          if failed(result) then return FAILURE, error end
-          return result
-        end,
-        a.error
-      )
-    else
-      error "structure divider must be function"
-    end
-  end,
-  __sub = function (a, b)
-    a = S.tostructure(a)
-    b = S.tostructure(b)
-    return S.new(function (self, ...)
-        local result, error = b:checker(...)
-        if not failed(result) then return FAILURE, error end
-        local result, error = a:checker(...)
+    assert(type(test) == "function", "structure divider must be function");
+    return S.new(function (self, value, ...)
+        local result, error = a:checker(value, ...)
+        if failed(result) then return FAILURE, error end
+        local result, error = test(result, ...) -- cascade
         if failed(result) then return FAILURE, error end
         return result
       end,
-      "not "..b.error.." and "..a.error
+      a.error
+    )
+  end,
+  __mul = function (a, b)
+    a = S.tostructure(a)
+    b = S.tostructure(b)
+    return S.new(function (self, value, ...)
+        local result, error = a:checker(value, ...)
+        if failed(result) then return FAILURE, error end
+        local result, error = b:checker(result, ...) -- cascade
+        if failed(result) then return FAILURE, error end
+        return result
+      end,
+      b.error.." and "..a.error
+    )
+  end,
+  __sub = function (a, b)
+    return -b.tostructure(b) * a
+  end,
+  __unm = function (a)
+    a = S.tostructure(a)
+    return S.new(function (self, ...)
+        local result, error = a:checker(value, ...)
+        if not failed(result) then return FAILURE, a.error end
+        return ...
+      end,
+      b.error.." and "..a.error
     )
   end,
   __index = S,
