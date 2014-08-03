@@ -9,6 +9,11 @@ assert(s:check { a = 1 })
 s = S.BOOLEAN
 assert(s:check(true))
 assert(s:check(false) == false)
+s = S.INTEGER
+assert(s:check(1))
+assert(s:check(0))
+assert(s:check(-1))
+assert(not s:check(1.1))
 s = S.NIL
 assert(s:check(nil) == nil)
 s = S.NUMBER

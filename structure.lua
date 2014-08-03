@@ -207,6 +207,7 @@ end
 S.T = {}
 S.T.BOOLEAN = primitive "boolean"
 S.T.FUNCTION = primitive "function"
+S.T.INTEGER = primitive "number" / function (o) if floor(o) == o then return o else return FAILURE end end
 S.T.NIL = primitive "nil"
 S.T.NOTNIL = S.new(function (self, o) if o ~= nil then return o else return FAILURE end end, "isnot(nil)")
 S.T.NUMBER = primitive "number"
