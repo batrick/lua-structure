@@ -6,6 +6,7 @@ local format = string.format
 
 local table = require "table"
 
+local _G = _G
 local assert = assert
 local error = error
 local getmetatable = getmetatable
@@ -37,6 +38,9 @@ structure.new {
 }
 --]]
 
+local FAILURE = {} -- distinct from nil
+local function failed(r) return r == FAILURE end
+
 local S = {}
 
 local M = {
@@ -44,11 +48,11 @@ local M = {
     a = S.tostructure(a)
     b = S.tostructure(b)
     return S.new(function (self, ...)
-        local asuccess, anewvalue = a:check(...)
-        if asuccess then return asuccess, anewvalue end
-        local bsuccess, bnewvalue = b:check(...)
-        if bsuccess then return bsuccess, bnewvalue end
-        return nil, nil
+        local result, error1 = a:checker(...)
+        if not failed(result) then return result end
+        local result, error2 = b:checker(...)
+        if not failed(result) then return result end
+        return FAILURE
       end,
       a.error.." or "..b.error
     )
@@ -57,11 +61,11 @@ local M = {
     a = S.tostructure(a)
     if type(test) == "function" then
       return S.new(function (self, ...)
-          local asuccess, anewvalue = a:check(...)
-          if not asuccess then return nil, anewvalue end
-          local tsuccess, tnewvalue = test(...)
-          if not tsuccess then return nil, tnewvalue end
-          return true, tnewvalue
+          local result, error = a:checker(...)
+          if failed(result) then return FAILURE, error end
+          local result, error = test(...)
+          if failed(result) then return FAILURE, error end
+          return result
         end,
         a.error
       )
@@ -73,11 +77,11 @@ local M = {
     a = S.tostructure(a)
     b = S.tostructure(b)
     return S.new(function (self, ...)
-        local bsuccess, bnewvalue = b:check(...)
-        if bsuccess then return nil, bnewvalue end -- should return bnewvalue?
-        local asuccess, anewvalue = a:check(...)
-        if not asuccess then return nil, anewvalue end
-        return true, anewvalue
+        local result, error = b:checker(...)
+        if not failed(result) then return FAILURE, error end
+        local result, error = a:checker(...)
+        if failed(result) then return FAILURE, error end
+        return result
       end,
       "not "..b.error.." and "..a.error
     )
@@ -86,7 +90,7 @@ local M = {
 }
 
 local function primitive (t)
-  return S.new(function (self, o) return type(o) == t end, "istype("..t..")")
+  return S.new(function (self, o) if type(o) == t then return o else return FAILURE end end, "istype("..t..")")
 end
 
 local function stringify (value)
@@ -101,27 +105,30 @@ function S.tostructure (value)
   if getmetatable(value) == M then return value end
   local t = type(value)
   if t == "boolean" or t == "nil" or t == "number" or t == "string" then
-    return S.new(function (self, o) return o == value end, stringify(value))
+    return S.new(function (self, o) if o == value then return o else return FAILURE end end, stringify(value))
   elseif t == "table" then
     if not (#value == 1 or #value == 0) then
       error "structure can only have one array entry to represent values for entire array"
     end
     local contents = {}
-    for key, value in next, value do
-      if key == 1 then -- array
-        local key = primitive "number" / function (n, container)
-          return n >= 1 and n <= rawlen(container) and floor(n) == n
+    for k, v in next, value do
+      if k == 1 then -- array
+        local sk = primitive "number" / function (n, container)
+          assert(type(n) == "number")
+          if n >= 1 and n <= rawlen(container) and floor(n) == n then
+            return n
+          else
+            return FAILURE
+          end
         end
-        local value = S.tostructure(rawget(value, 1))
-        contents[key] = value
+        local sv = S.tostructure(v)
+        contents[sk] = sv
       else -- everything else
-        contents[S.tostructure(key)] = S.tostructure(value)
+        contents[S.tostructure(k)] = S.tostructure(v)
       end
     end
     local structure = primitive "table" / function (t, container, key, chain)
-      if type(chain) == "nil" then
-        chain = {stringify(t)}
-      end
+      chain = chain or {stringify(t)}
       local found = {}
       for sk in next, contents do found[sk] = false end
       local n = rawlen(t)
@@ -129,35 +136,35 @@ function S.tostructure (value)
         chain[#chain+1] = "["..stringify(k).."]"
         local foundkey = false
         for sk, sv in next, contents do
-          local success, newkey = sk:check(k, t, k, chain)
-          if success then
-            local success, newvalue = sv:check(v, t, k, chain)
-            if success then
-              if newkey ~= nil and newvalue ~= nil then
-                rawset(t, newkey, newvalue)
-              elseif newkey ~= nil then
-                rawset(t, newkey, v)
-              elseif newvalue ~= nil then
-                rawset(t, k, newvalue)
+          local kresult = sk:checker(k, t, k, chain)
+          if not failed(kresult) then
+            local vresult = sv:checker(v, t, k, chain)
+            if not failed(vresult) then
+              if kresult ~= k and vresult ~= v then
+                rawset(t, kresult, vresult)
+              elseif kresult ~= k then
+                rawset(t, kresult, v)
+              elseif vresult ~= v then
+                rawset(t, k, vresult)
               end
               found[sk] = true
               foundkey = true
             else
-              error("key "..stringify(k).." did not have expected value ("..sv.error..") in structure `"..table.concat(chain).."'")
+              return FAILURE, stringify(v).." did not have expected value ("..sv.error..") in structure `"..table.concat(chain).."'"
             end
           end
         end
         chain[#chain] = nil
         if not foundkey then
-          error("key "..stringify(k).." is not a valid member of structure `"..table.concat(chain).."'")
+          return FAILURE, "key "..stringify(k).." is not a valid member of structure `"..table.concat(chain).."'"
         end
       end
       for sk in next, contents do
-        if not found[sk] and not contents[sk]:check(nil, t) then
-          error("container `"..table.concat(chain).."' is missing required key ("..sk.error..")")
+        if not found[sk] and failed(contents[sk]:checker(nil, t)) then
+          return FAILURE, "container `"..table.concat(chain).."' is missing required key ("..sk.error..")"
         end
       end
-      return true
+      return t
     end
     return structure
   else
@@ -175,9 +182,13 @@ function S.new (checker, error)
 end
 
 function S:check (...)
-  return not not self:checker(...)
+  local result, error = self:checker(...)
+  if failed(result) then
+    return nil, error
+  else
+    return result
+  end
 end
-
 
 S.T = {}
 S.T.BOOLEAN = primitive "boolean"
@@ -189,7 +200,7 @@ S.T.TABLE = primitive "table"
 S.T.THREAD = primitive "thread"
 S.T.USERDATA = primitive "userdata"
 
-S.T.NOTNIL = S.new(function (self, o) return o ~= nil end, "isnot(nil)")
+S.T.NOTNIL = S.new(function (self, o) if o ~= nil then return o else return FAILURE end end, "isnot(nil)")
 
 function new (structure)
   return S.tostructure(structure)
