@@ -32,6 +32,7 @@ local s = S.new {
 }
 
 assert(s:check { probes = { path = '', matcher = function() end }, matches = { s = 1 } } )
+assert(not s:check { probes = { path = '', matcher = nil }, matches = { s = 1 } } )
 
 local s = S.new {
   [S.new "probes" + S.BOOLEAN] = {

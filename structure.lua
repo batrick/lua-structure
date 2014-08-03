@@ -106,21 +106,19 @@ function S.tostructure (value)
     if not (#value == 1 or #value == 0) then
       error "structure can only have one array entry to represent values for entire array"
     end
-    local structure = primitive "table"
     local contents = {}
     for key, value in next, value do
-      if key ~= 1 then -- omit array sugar
+      if key == 1 then -- array
+        local key = primitive "number" / function (n, container)
+          return n >= 1 and n <= rawlen(container) and floor(n) == n
+        end
+        local value = S.tostructure(rawget(value, 1))
+        contents[key] = value
+      else -- everything else
         contents[S.tostructure(key)] = S.tostructure(value)
       end
     end
-    if rawget(value, 1) then -- array sugar
-      local key = primitive "number" / function (n, container)
-        return n >= 1 and n <= rawlen(container) and floor(n) == n
-      end
-      local value = S.tostructure(rawget(value, 1))
-      contents[key] = value
-    end
-    structure = structure / function (t, container, key, chain)
+    local structure = primitive "table" / function (t, container, key, chain)
       if type(chain) == "nil" then
         chain = {stringify(t)}
       end
