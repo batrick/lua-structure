@@ -89,10 +89,6 @@ local M = {
   __index = S,
 }
 
-local function primitive (t)
-  return S.new(function (self, o) if type(o) == t then return o else return FAILURE end end, "istype("..t..")")
-end
-
 local function stringify (value)
   if type(value) == "string" then
     return string.format("%q", value)
@@ -113,7 +109,7 @@ function S.tostructure (value)
     local contents = {}
     for k, v in next, value do
       if k == 1 then -- array
-        local sk = primitive "number" / function (n, container)
+        local sk = S.T.NUMBER / function (n, container)
           assert(type(n) == "number")
           if n >= 1 and n <= rawlen(container) and floor(n) == n then
             return n
@@ -127,7 +123,7 @@ function S.tostructure (value)
         contents[S.tostructure(k)] = S.tostructure(v)
       end
     end
-    local structure = primitive "table" / function (t, container, key, chain)
+    local structure = S.T.TABLE / function (t, container, key, chain)
       chain = chain or {stringify(t)}
       local found = {}
       for sk in next, contents do found[sk] = false end
@@ -190,22 +186,24 @@ function S:check (...)
   end
 end
 
+function new (structure)
+  return S.tostructure(structure)
+end
+
+local function primitive (t)
+  return S.new(function (self, o) if type(o) == t then return o else return FAILURE end end, "istype("..t..")")
+end
+
 S.T = {}
 S.T.BOOLEAN = primitive "boolean"
 S.T.FUNCTION = primitive "function"
 S.T.NIL = primitive "nil"
+S.T.NOTNIL = S.new(function (self, o) if o ~= nil then return o else return FAILURE end end, "isnot(nil)")
 S.T.NUMBER = primitive "number"
 S.T.STRING = primitive "string"
 S.T.TABLE = primitive "table"
 S.T.THREAD = primitive "thread"
 S.T.USERDATA = primitive "userdata"
-
-S.T.NOTNIL = S.new(function (self, o) if o ~= nil then return o else return FAILURE end end, "isnot(nil)")
-
-function new (structure)
-  return S.tostructure(structure)
-end
-
 for k, v in next, S.T do _ENV[k] = v end
 
 return _ENV
