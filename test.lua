@@ -53,6 +53,7 @@ local s = S.new {
 }
 
 assert(s:check { probes = { {path = '', matcher = function() end}, }, matches = { s = 1 }, })
+assert(s:check { [true] = { {path = '', matcher = function() end}, }, matches = { s = 1 }, })
 local a = assert(s:check { probes = { {path = '', matcher = "Hi"}, }, matches = { s = 1 }, })
 assert(a.probes[1].matcher == "hi")
 assert(not s:check { matches = { s = 1 }, })
